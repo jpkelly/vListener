@@ -1,0 +1,264 @@
+import json
+import time
+import keyboard
+import threading
+import socket
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.togglebutton import ToggleButton
+from kivy.clock import Clock
+
+def parse_command(command, delay_ms):
+    try:
+        command_dict = json.loads(command)
+        if 'key' in command_dict and 'type' in command_dict:
+            if command_dict['type'] == 'press':
+                if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
+                    key = command_dict['key']
+                    print(f"Simulating key press: {key}")
+                    time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                    keyboard.press(key)
+                    keyboard.release(key)
+                    return f"Key press simulated: {key}"
+                else:
+                    return "Unauthorized access: Incorrect password"
+            elif command_dict['type'] == 'pressSpecial':
+                if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
+                    key = command_dict['key']
+                    print(f"Simulating special key press: {key}")
+                    time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                    keyboard.press_and_release(key)
+                    return f"Special key press simulated: {key}"
+                else:
+                    return "Unauthorized access: Incorrect password"
+            elif command_dict['type'] == 'combination':
+                if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
+                    if 'modifiers' in command_dict:
+                        modifiers = command_dict['modifiers']
+                        key = command_dict['key']
+                        combo = '+'.join(modifiers) + '+' + key
+                        print(f"Simulating key combination: {combo}")
+                        time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                        keyboard.press_and_release(combo)
+                        return f"Key combination simulated: {combo}"
+                    else:
+                        return "Missing modifiers for key combination"
+                else:
+                    return "Unauthorized access: Incorrect password"
+            elif command_dict['type'] == 'trio':
+                if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
+                    if 'modifiers' in command_dict and len(command_dict['modifiers']) == 2:
+                        modifiers = command_dict['modifiers']
+                        key = command_dict['key']
+                        combo = '+'.join(modifiers) + '+' + key
+                        print(f"Simulating key trio: {combo}")
+                        time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                        keyboard.press_and_release(combo)
+                        return f"Key trio simulated: {combo}"
+                    else:
+                        return "Trio command requires exactly two modifiers"
+                else:
+                    return "Unauthorized access: Incorrect password"
+            else:
+                return "Unsupported command type"
+        else:
+            return "Invalid command format"
+    except json.JSONDecodeError:
+        return "Invalid JSON format"
+
+class VicreoListenerApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.server_socket = None
+        self.active_connections = []
+        self.is_running = True
+        self.debug_mode = False
+        self.delay_ms = 2000  # Default delay in milliseconds
+        self.listen_ip = '127.0.0.1'  # Default IP address
+
+    def build(self):
+        self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Horizontal layout for port number, IP address, and corresponding buttons
+        config_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
+        
+        self.ip_input = TextInput(hint_text="Enter IP address", multiline=False, size_hint_y=None, height=60)
+        config_layout.add_widget(self.ip_input)
+        
+        self.set_ip_button = Button(text="Set IP", on_press=self.set_ip, size_hint_y=None, height=60)
+        config_layout.add_widget(self.set_ip_button)
+        
+        self.port_input = TextInput(hint_text="Enter port number", multiline=False, size_hint_y=None, height=60)
+        config_layout.add_widget(self.port_input)
+        
+        self.set_port_button = Button(text="Set Port", on_press=self.set_port, size_hint_y=None, height=60)
+        config_layout.add_widget(self.set_port_button)
+        
+        self.delay_input = TextInput(hint_text="Enter delay (ms)", multiline=False, size_hint_y=None, height=60)
+        config_layout.add_widget(self.delay_input)
+        
+        self.set_delay_button = Button(text="Set Delay", on_press=self.set_delay, size_hint_y=None, height=60)
+        config_layout.add_widget(self.set_delay_button)
+        
+        self.root.add_widget(config_layout)
+        
+        # Horizontal layout for control buttons and debugging
+        control_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
+        
+        self.start_server_button = Button(text="Start Server", on_press=self.start_server, disabled=True, size_hint=(0.25, None), height=60)
+        control_layout.add_widget(self.start_server_button)
+        
+        self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.25, None), height=60)
+        control_layout.add_widget(self.disconnect_button)
+        
+        # Toggle button for debugging
+        self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.7, 0.7, 0.7, 1))
+        self.debug_toggle.bind(on_press=self.toggle_debug)
+        control_layout.add_widget(self.debug_toggle)
+        
+        self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
+        control_layout.add_widget(self.quit_button)
+        
+        self.root.add_widget(control_layout)
+        
+        # The output widget will adjust to fill remaining space
+        self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1))
+        self.root.add_widget(self.output)
+        
+        # Center-align text in IP, port, and delay inputs
+        self.update_text_alignment(self.ip_input)
+        self.update_text_alignment(self.port_input)
+        self.update_text_alignment(self.delay_input)
+        
+        return self.root
+
+    def update_text_alignment(self, text_input):
+        text_input.halign = 'center'
+        text_input.bind(size=self._align_text)
+        text_input.bind(focus=self._align_text)
+
+    def _align_text(self, instance, value):
+        instance.text_size = instance.size
+        instance.padding_y = (instance.height - instance.line_height) / 2
+
+    def toggle_debug(self, instance):
+        self.debug_mode = not self.debug_mode
+        self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
+        self.debug_toggle.background_color = (0.3, 1, 0.3, 1) if self.debug_mode else (1, 0.3, 0.3, 1)
+        self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
+
+    def set_ip(self, instance):
+        self.listen_ip = self.ip_input.text
+        self.log_message(f"IP address set to {self.listen_ip}")
+        if self.debug_mode:
+            self.log_message(f"[DEBUG] IP address set to {self.listen_ip}")
+
+    def set_port(self, instance):
+        if self.port_input.text.isdigit() and 0 <= int(self.port_input.text) <= 65535:
+            self.start_server_button.disabled = False
+            self.log_message(f"Port set to {self.port_input.text}")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] Port set to {self.port_input.text}")
+        else:
+            self.log_message("Invalid port number")
+            if self.debug_mode:
+                self.log_message("[DEBUG] Invalid port number entered")
+
+    def set_delay(self, instance):
+        if self.delay_input.text.isdigit() and int(self.delay_input.text) >= 0:
+            self.delay_ms = int(self.delay_input.text)
+            self.log_message(f"Delay set to {self.delay_ms} milliseconds")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] Delay set to {self.delay_ms} milliseconds")
+        else:
+            self.log_message("Invalid delay value")
+            if self.debug_mode:
+                self.log_message("[DEBUG] Invalid delay value entered")
+
+    def start_server(self, instance):
+        self.start_server_button.disabled = True
+        self.disconnect_button.disabled = False
+        self.is_running = True
+        self.server_thread = threading.Thread(target=self.run_server)
+        self.server_thread.start()
+        if self.debug_mode:
+            self.log_message("[DEBUG] Server start button pressed")
+
+    def run_server(self):
+        port = int(self.port_input.text)
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.listen_ip, port))
+        self.server_socket.listen(5)
+        self.log_message(f"Server started on {self.listen_ip}:{port}. Waiting for connections...")
+        if self.debug_mode:
+            self.log_message(f"[DEBUG] Server listening on {self.listen_ip}:{port}")
+        while self.is_running:
+            try:
+                client_socket, addr = self.server_socket.accept()
+                if self.debug_mode:
+                    self.log_message(f"[DEBUG] Accepted connection from {addr}")
+                if self.is_running:
+                    self.active_connections.append(client_socket)
+                    threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+            except Exception as e:
+                if self.is_running:
+                    self.log_message(str(e))
+                if self.debug_mode:
+                    self.log_message(f"[DEBUG] Exception in run_server: {str(e)}")
+                break
+
+    def handle_client(self, client_socket):
+        try:
+            while self.is_running:
+                try:
+                    data = client_socket.recv(1024).decode('utf-8')
+                    if not data:
+                        break
+                    self.log_message(f"Incoming message: {data}")
+                    if self.debug_mode:
+                        self.log_message(f"[DEBUG] Received data: {data}")
+                    response = parse_command(data, self.delay_ms)
+                    self.log_message(response)
+                except socket.error as e:
+                    self.log_message(f"Socket error during client handling: {str(e)}")
+                    if self.debug_mode:
+                        self.log_message(f"[DEBUG] Socket error: {str(e)}")
+                    break
+        finally:
+            client_socket.close()
+            self.active_connections.remove(client_socket)
+            self.log_message("Client disconnected.")
+            if self.debug_mode:
+                self.log_message("[DEBUG] Client socket closed and removed from active connections")
+
+    def disconnect(self, instance):
+        self.is_running = False
+        for client_socket in self.active_connections:
+            client_socket.close()
+        self.active_connections.clear()
+        if self.server_socket:
+            self.server_socket.close()
+        self.start_server_button.disabled = False
+        self.disconnect_button.disabled = True
+        self.log_message("Server disconnected.")
+        if self.debug_mode:
+            self.log_message("[DEBUG] Server disconnect button pressed and server socket closed")
+
+    def quit_app(self, instance):
+        self.disconnect(instance)
+        self.stop()
+        print("Application has been closed cleanly.")
+        if self.debug_mode:
+            print("[DEBUG] Application closed by user.")
+
+    def log_message(self, message):
+        # Schedule the message to be added to the output text and printed to console
+        def append_text(dt):
+            self.output.text += f"{message}\n"
+            print(message)  # Print to console
+        Clock.schedule_once(append_text)
+
+if __name__ == "__main__":
+    VicreoListenerApp().run()
