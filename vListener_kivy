@@ -96,7 +96,7 @@ class VicreoListenerApp(App):
         self.debug_mode = False
         self.delay_ms = 2000  # Default delay in milliseconds
         self.listen_ip = '127.0.0.1'  # Default IP address
-        self.tray_icon = None
+        self.tray_icon = None  # To keep reference to the pystray icon
 
     def build(self):
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -151,6 +151,9 @@ class VicreoListenerApp(App):
         self.update_text_alignment(self.ip_input)
         self.update_text_alignment(self.port_input)
         self.update_text_alignment(self.delay_input)
+
+        # Override the window close event to hide the window instead
+        Window.bind(on_request_close=self.hide_window)
         
         return self.root
 
@@ -286,6 +289,10 @@ class VicreoListenerApp(App):
         Window.show()
         Window.raise_window()
 
+    def hide_window(self, *args):
+        Window.hide()
+        return True  # Returning True prevents the window from being closed
+
 # Function to handle quitting the app from the menu extra
 def quit_app(icon, item):
     icon.stop()
@@ -302,11 +309,9 @@ def show_window(icon, item):
 def run_tray():
     menu = (item('Show Window', show_window), item('Quit', quit_app))
     icon = pystray.Icon("VicreoListener", create_image(), "Vicreo Listener", menu)
-    icon.run_detached()  # Use run_detached to avoid blocking
+    icon.run_detached()
 
 if __name__ == "__main__":
-    # Run pystray first in detached mode to avoid blocking
-    run_tray()
+    run_tray()  # Start pystray menu
 
-    # Then run Kivy application
-    VicreoListenerApp().run()
+    VicreoListenerApp().run()  # Run the Kivy application on the main thread
