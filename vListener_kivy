@@ -1,15 +1,34 @@
 import json
 import time
 import keyboard
-import threading
 import socket
+import pystray
+from pystray import MenuItem as item
+from PIL import Image, ImageDraw
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
 from kivy.clock import Clock
+from kivy.core.window import Window
+import threading
 
+# Function to create an icon image
+def create_image():
+    try:
+        return Image.open('icon.png')
+    except IOError:
+        width = 64
+        height = 64
+        image = Image.new('RGB', (width, height), 'white')
+        dc = ImageDraw.Draw(image)
+        dc.rectangle(
+            (width // 4, height // 4, width // 4 * 3, height // 4 * 3),
+            fill='black')
+        return image
+
+# Function to parse and execute commands
 def parse_command(command, delay_ms):
     try:
         command_dict = json.loads(command)
@@ -77,6 +96,7 @@ class VicreoListenerApp(App):
         self.debug_mode = False
         self.delay_ms = 2000  # Default delay in milliseconds
         self.listen_ip = '127.0.0.1'  # Default IP address
+        self.tray_icon = None
 
     def build(self):
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -252,6 +272,8 @@ class VicreoListenerApp(App):
         print("Application has been closed cleanly.")
         if self.debug_mode:
             print("[DEBUG] Application closed by user.")
+        if self.tray_icon:
+            self.tray_icon.stop()
 
     def log_message(self, message):
         # Schedule the message to be added to the output text and printed to console
@@ -260,5 +282,31 @@ class VicreoListenerApp(App):
             print(message)  # Print to console
         Clock.schedule_once(append_text)
 
+    def show_window(self):
+        Window.show()
+        Window.raise_window()
+
+# Function to handle quitting the app from the menu extra
+def quit_app(icon, item):
+    icon.stop()
+    app = App.get_running_app()
+    if app:
+        app.quit_app(None)
+
+# Function to handle showing the window from the menu extra
+def show_window(icon, item):
+    app = App.get_running_app()
+    if app:
+        app.show_window()
+
+def run_tray():
+    menu = (item('Show Window', show_window), item('Quit', quit_app))
+    icon = pystray.Icon("VicreoListener", create_image(), "Vicreo Listener", menu)
+    icon.run_detached()  # Use run_detached to avoid blocking
+
 if __name__ == "__main__":
+    # Run pystray first in detached mode to avoid blocking
+    run_tray()
+
+    # Then run Kivy application
     VicreoListenerApp().run()
