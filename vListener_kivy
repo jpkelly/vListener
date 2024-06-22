@@ -13,6 +13,21 @@ from kivy.uix.togglebutton import ToggleButton
 from kivy.clock import Clock
 from kivy.core.window import Window
 import threading
+import logging
+import ipaddress
+
+# Custom logging handler for Kivy's TextInput
+class KivyHandler(logging.Handler):
+    def __init__(self, output_widget):
+        super().__init__()
+        self.output_widget = output_widget
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        Clock.schedule_once(lambda dt: self.append_text(log_entry))
+
+    def append_text(self, log_entry):
+        self.output_widget.text += log_entry + '\n'
 
 # Function to create an icon image
 def create_image():
@@ -32,12 +47,13 @@ def create_image():
 def parse_command(command, delay_ms):
     try:
         command_dict = json.loads(command)
+        logging.debug(f"Parsed command: {command_dict}")
         if 'key' in command_dict and 'type' in command_dict:
             if command_dict['type'] == 'press':
                 if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
                     key = command_dict['key']
-                    print(f"Simulating key press: {key}")
-                    time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                    logging.info(f"Simulating key press: {key}")
+                    time.sleep(delay_ms / 1000.0)
                     keyboard.press(key)
                     keyboard.release(key)
                     return f"Key press simulated: {key}"
@@ -46,8 +62,8 @@ def parse_command(command, delay_ms):
             elif command_dict['type'] == 'pressSpecial':
                 if 'password' in command_dict and command_dict['password'] == 'd41d8cd98f00b204e9800998ecf8427e':
                     key = command_dict['key']
-                    print(f"Simulating special key press: {key}")
-                    time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                    logging.info(f"Simulating special key press: {key}")
+                    time.sleep(delay_ms / 1000.0)
                     keyboard.press_and_release(key)
                     return f"Special key press simulated: {key}"
                 else:
@@ -58,8 +74,8 @@ def parse_command(command, delay_ms):
                         modifiers = command_dict['modifiers']
                         key = command_dict['key']
                         combo = '+'.join(modifiers) + '+' + key
-                        print(f"Simulating key combination: {combo}")
-                        time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                        logging.info(f"Simulating key combination: {combo}")
+                        time.sleep(delay_ms / 1000.0)
                         keyboard.press_and_release(combo)
                         return f"Key combination simulated: {combo}"
                     else:
@@ -72,8 +88,8 @@ def parse_command(command, delay_ms):
                         modifiers = command_dict['modifiers']
                         key = command_dict['key']
                         combo = '+'.join(modifiers) + '+' + key
-                        print(f"Simulating key trio: {combo}")
-                        time.sleep(delay_ms / 1000.0)  # Convert milliseconds to seconds
+                        logging.info(f"Simulating key trio: {combo}")
+                        time.sleep(delay_ms / 1000.0)
                         keyboard.press_and_release(combo)
                         return f"Key trio simulated: {combo}"
                     else:
@@ -84,8 +100,12 @@ def parse_command(command, delay_ms):
                 return "Unsupported command type"
         else:
             return "Invalid command format"
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON decode error: {e}")
         return "Invalid JSON format"
+    except Exception as e:
+        logging.exception(f"Unexpected error during command parsing: {e}")
+        return "Error processing command"
 
 class VicreoListenerApp(App):
     def __init__(self, **kwargs):
@@ -94,68 +114,81 @@ class VicreoListenerApp(App):
         self.active_connections = []
         self.is_running = True
         self.debug_mode = False
-        self.delay_ms = 2000  # Default delay in milliseconds
-        self.listen_ip = '127.0.0.1'  # Default IP address
-        self.tray_icon = None  # To keep reference to the pystray icon
+        self.delay_ms = 2000
+        self.listen_ip = '127.0.0.1'
+        self.tray_icon = None
 
     def build(self):
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Horizontal layout for port number, IP address, and corresponding buttons
+
         config_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
-        
         self.ip_input = TextInput(hint_text="Enter IP address", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.ip_input)
-        
+
         self.set_ip_button = Button(text="Set IP", on_press=self.set_ip, size_hint_y=None, height=60)
         config_layout.add_widget(self.set_ip_button)
-        
+
         self.port_input = TextInput(hint_text="Enter port number", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.port_input)
-        
+
         self.set_port_button = Button(text="Set Port", on_press=self.set_port, size_hint_y=None, height=60)
         config_layout.add_widget(self.set_port_button)
-        
+
         self.delay_input = TextInput(hint_text="Enter delay (ms)", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.delay_input)
-        
+
         self.set_delay_button = Button(text="Set Delay", on_press=self.set_delay, size_hint_y=None, height=60)
         config_layout.add_widget(self.set_delay_button)
-        
+
         self.root.add_widget(config_layout)
-        
-        # Horizontal layout for control buttons and debugging
+
         control_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
-        
-        self.start_server_button = Button(text="Start Server", on_press=self.start_server, disabled=True, size_hint=(0.25, None), height=60)
+        self.start_server_button = Button(text="Start Server", on_press=self.start_server, disabled=True, size_hint=(0.2, None), height=60)
         control_layout.add_widget(self.start_server_button)
-        
-        self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.25, None), height=60)
+
+        self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.2, None), height=60)
         control_layout.add_widget(self.disconnect_button)
-        
-        # Toggle button for debugging
-        self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.7, 0.7, 0.7, 1))
+
+        self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.2, None), height=60, background_color=(0.7, 0.7, 0.7, 1))
         self.debug_toggle.bind(on_press=self.toggle_debug)
         control_layout.add_widget(self.debug_toggle)
-        
-        self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
+
+        self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.2, None), height=60)
         control_layout.add_widget(self.quit_button)
-        
+
+        self.hide_button = Button(text="Hide (use menu to show)", on_press=self.hide_window_button, size_hint=(0.41, None), height=60)
+        control_layout.add_widget(self.hide_button)
+
         self.root.add_widget(control_layout)
-        
-        # The output widget will adjust to fill remaining space
+
         self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1))
         self.root.add_widget(self.output)
-        
-        # Center-align text in IP, port, and delay inputs
+
         self.update_text_alignment(self.ip_input)
         self.update_text_alignment(self.port_input)
         self.update_text_alignment(self.delay_input)
 
-        # Override the window close event to hide the window instead
         Window.bind(on_request_close=self.hide_window)
-        
+
+        self.setup_logging()
+
         return self.root
+
+    def setup_logging(self):
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)
+        if not logger.hasHandlers():
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+            console_handler.setFormatter(console_formatter)
+            logger.addHandler(console_handler)
+
+        kivy_handler = KivyHandler(self.output)
+        kivy_handler.setLevel(logging.DEBUG)
+        kivy_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+        kivy_handler.setFormatter(kivy_formatter)
+        logger.addHandler(kivy_handler)
 
     def update_text_alignment(self, text_input):
         text_input.halign = 'center'
@@ -173,10 +206,23 @@ class VicreoListenerApp(App):
         self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
 
     def set_ip(self, instance):
-        self.listen_ip = self.ip_input.text
-        self.log_message(f"IP address set to {self.listen_ip}")
-        if self.debug_mode:
-            self.log_message(f"[DEBUG] IP address set to {self.listen_ip}")
+        ip_address = self.ip_input.text
+        if self.validate_ip(ip_address):
+            self.listen_ip = ip_address
+            self.log_message(f"IP address set to {self.listen_ip}")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] IP address set to {self.listen_ip}")
+        else:
+            self.log_message("Invalid IP address entered.")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] Invalid IP address: {ip_address}")
+
+    def validate_ip(self, ip_address):
+        try:
+            ip = ipaddress.ip_address(ip_address)
+            return True
+        except ValueError:
+            return False
 
     def set_port(self, instance):
         if self.port_input.text.isdigit() and 0 <= int(self.port_input.text) <= 65535:
@@ -210,27 +256,29 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Server start button pressed")
 
     def run_server(self):
-        port = int(self.port_input.text)
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.listen_ip, port))
-        self.server_socket.listen(5)
-        self.log_message(f"Server started on {self.listen_ip}:{port}. Waiting for connections...")
-        if self.debug_mode:
-            self.log_message(f"[DEBUG] Server listening on {self.listen_ip}:{port}")
-        while self.is_running:
-            try:
-                client_socket, addr = self.server_socket.accept()
-                if self.debug_mode:
-                    self.log_message(f"[DEBUG] Accepted connection from {addr}")
-                if self.is_running:
-                    self.active_connections.append(client_socket)
-                    threading.Thread(target=self.handle_client, args=(client_socket,)).start()
-            except Exception as e:
-                if self.is_running:
-                    self.log_message(str(e))
-                if self.debug_mode:
-                    self.log_message(f"[DEBUG] Exception in run_server: {str(e)}")
-                break
+        try:
+            port = int(self.port_input.text)
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.bind((self.listen_ip, port))
+            self.server_socket.listen(5)
+            self.log_message(f"Server started on {self.listen_ip}:{port}. Waiting for connections...")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] Server listening on {self.listen_ip}:{port}")
+            while self.is_running:
+                try:
+                    client_socket, addr = self.server_socket.accept()
+                    if self.debug_mode:
+                        self.log_message(f"[DEBUG] Accepted connection from {addr}")
+                    if self.is_running:
+                        self.active_connections.append(client_socket)
+                        threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+                except Exception as e:
+                    self.log_message(f"Error accepting connection: {e}")
+                    if self.debug_mode:
+                        self.log_message(f"[DEBUG] Exception in run_server: {e}")
+        except Exception as e:
+            self.log_message(f"Server error: {e}")
+            logging.exception(f"Unexpected error in run_server: {e}")
 
     def handle_client(self, client_socket):
         try:
@@ -249,20 +297,35 @@ class VicreoListenerApp(App):
                     if self.debug_mode:
                         self.log_message(f"[DEBUG] Socket error: {str(e)}")
                     break
+        except Exception as e:
+            self.log_message(f"Error handling client: {e}")
+            logging.exception(f"Unexpected error in handle_client: {e}")
         finally:
-            client_socket.close()
-            self.active_connections.remove(client_socket)
-            self.log_message("Client disconnected.")
-            if self.debug_mode:
-                self.log_message("[DEBUG] Client socket closed and removed from active connections")
+            try:
+                client_socket.close()
+                self.active_connections.remove(client_socket)
+                self.log_message("Client disconnected.")
+                if self.debug_mode:
+                    self.log_message("[DEBUG] Client socket closed and removed from active connections")
+            except Exception as e:
+                self.log_message(f"Error closing client socket: {e}")
+                logging.exception(f"Error closing client socket: {e}")
 
     def disconnect(self, instance):
         self.is_running = False
         for client_socket in self.active_connections:
-            client_socket.close()
+            try:
+                client_socket.close()
+            except Exception as e:
+                self.log_message(f"Error closing client socket: {e}")
+                logging.exception(f"Error closing client socket: {e}")
         self.active_connections.clear()
         if self.server_socket:
-            self.server_socket.close()
+            try:
+                self.server_socket.close()
+            except Exception as e:
+                self.log_message(f"Error closing server socket: {e}")
+                logging.exception(f"Error closing server socket: {e}")
         self.start_server_button.disabled = False
         self.disconnect_button.disabled = True
         self.log_message("Server disconnected.")
@@ -272,38 +335,43 @@ class VicreoListenerApp(App):
     def quit_app(self, instance):
         self.disconnect(instance)
         self.stop()
-        print("Application has been closed cleanly.")
+        logging.info("Application has been closed cleanly.")
         if self.debug_mode:
-            print("[DEBUG] Application closed by user.")
+            logging.debug("[DEBUG] Application closed by user.")
         if self.tray_icon:
             self.tray_icon.stop()
 
     def log_message(self, message):
-        # Schedule the message to be added to the output text and printed to console
         def append_text(dt):
             self.output.text += f"{message}\n"
-            print(message)  # Print to console
+            logging.info(message)
         Clock.schedule_once(append_text)
 
     def show_window(self):
+        logging.debug("Showing window")
         Window.show()
         Window.raise_window()
 
     def hide_window(self, *args):
+        logging.debug("Hiding window")
         Window.hide()
-        return True  # Returning True prevents the window from being closed
+        return True
 
-# Function to handle quitting the app from the menu extra
+    def hide_window_button(self, instance):
+        logging.debug("Hide window button pressed")
+        Window.hide()
+
 def quit_app(icon, item):
+    logging.debug("Quitting application from tray icon")
     icon.stop()
     app = App.get_running_app()
     if app:
         app.quit_app(None)
 
-# Function to handle showing the window from the menu extra
 def show_window(icon, item):
     app = App.get_running_app()
     if app:
+        logging.debug("Show window called from tray icon")
         app.show_window()
 
 def run_tray():
@@ -312,6 +380,5 @@ def run_tray():
     icon.run_detached()
 
 if __name__ == "__main__":
-    run_tray()  # Start pystray menu
-
-    VicreoListenerApp().run()  # Run the Kivy application on the main thread
+    run_tray()
+    VicreoListenerApp().run()
