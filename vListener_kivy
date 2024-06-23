@@ -138,29 +138,25 @@ class VicreoListenerApp(App):
         self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.25, None), height=60)
         control_layout.add_widget(self.disconnect_button)
         
-        # Toggle button for debugging
         self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.7, 0.7, 0.7, 1))
         self.debug_toggle.bind(on_press=self.toggle_debug)
         control_layout.add_widget(self.debug_toggle)
-
+        
         self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
         control_layout.add_widget(self.quit_button)
 
-        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.40, None), height=60, background_color=(0.2, 0.4, 0.6, 1))
+        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0.2, 0.4, 0.6, 1))
         control_layout.add_widget(self.hide_window_button)
         
         self.root.add_widget(control_layout)
         
-        # The output widget will adjust to fill remaining space
         self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1))
         self.root.add_widget(self.output)
         
-        # Center-align text in IP, port, and delay inputs
         self.update_text_alignment(self.ip_input)
         self.update_text_alignment(self.port_input)
         self.update_text_alignment(self.delay_input)
 
-        # Override the window close event to hide the window instead
         Window.bind(on_request_close=self.hide_window)
         
         return self.root
@@ -177,7 +173,7 @@ class VicreoListenerApp(App):
     def toggle_debug(self, instance):
         self.debug_mode = not self.debug_mode
         self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
-        self.debug_toggle.background_color = (1, 0.3, 0.3, 1) if self.debug_mode else (0.7, 0.7, 0.7, 1)
+        self.debug_toggle.background_color = (1, 0.4, 0.4, 1) if self.debug_mode else (0.7, 0.7, 0.7, 1)
         self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
 
     def set_ip(self, instance):
@@ -280,18 +276,17 @@ class VicreoListenerApp(App):
     def quit_app(self, instance):
         self.disconnect(instance)
         self.stop()
-        print("Application has been closed cleanly.")
+        logging.info("Application has been closed cleanly.")
         if self.debug_mode:
-            print("[DEBUG] Application closed by user.")
+            logging.debug("[DEBUG] Application closed by user.")
         if self.tray_icon:
             self.tray_icon.stop()
 
     def log_message(self, message):
-        # Schedule the message to be added to the output text and printed to console
         def append_text(dt):
             current_text = self.output.text
             self.output.text = f"{current_text}{message}\n"
-            print(message)  # Print to console
+            logging.info(message)  # Print to console
         Clock.schedule_once(append_text)
 
     def show_window(self):
@@ -306,14 +301,12 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Window hidden")
         return True  # Returning True prevents the window from being closed
 
-# Function to handle quitting the app from the menu extra
 def quit_app(icon, item):
     icon.stop()
     app = App.get_running_app()
     if app:
         app.quit_app(None)
 
-# Function to handle showing the window from the menu extra
 def show_window(icon, item):
     app = App.get_running_app()
     if app:
@@ -326,5 +319,4 @@ def run_tray():
 
 if __name__ == "__main__":
     run_tray()  # Start pystray menu
-
     VicreoListenerApp().run()  # Run the Kivy application on the main thread
