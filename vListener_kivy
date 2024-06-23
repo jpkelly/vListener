@@ -29,6 +29,7 @@ DEFAULT_IP_ADDRESS = "127.0.0.1"
 DEFAULT_PORT = 12345
 DEFAULT_DELAY_MS = 2500
 DEFAULT_DEBUG_MODE = False
+STARTUP_MESSAGE = "vListener started. You can close this window and it will run in background. Use menu extra to show window again or quit vListener."
 
 # Configure the logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -160,35 +161,39 @@ class VicreoListenerApp(App):
         self.root.add_widget(config_layout)
         
         # Horizontal layout for control buttons and debugging
-        control_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
+        self.control_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
         
         self.start_server_button = Button(text="Start Server", on_press=self.start_server, disabled=True, size_hint=(0.25, None), height=60)
-        control_layout.add_widget(self.start_server_button)
+        self.control_layout.add_widget(self.start_server_button)
         
         self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.25, None), height=60)
-        control_layout.add_widget(self.disconnect_button)
+        self.control_layout.add_widget(self.disconnect_button)
         
         self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.5, 0.5, 0.5, 1))
         self.debug_toggle.bind(on_press=self.toggle_debug)
-        control_layout.add_widget(self.debug_toggle)
+        self.control_layout.add_widget(self.debug_toggle)
         
         self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
-        control_layout.add_widget(self.quit_button)
+        self.control_layout.add_widget(self.quit_button)
         
-        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0.5, 0.7, 1, 1))  # Lighter blue
-        control_layout.add_widget(self.hide_window_button)
+        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0, 1, 0, 1))  # Green background
+        self.control_layout.add_widget(self.hide_window_button)
         
-        self.root.add_widget(control_layout)
+        # New layout to control vertical spacing
+        self.vertical_layout = BoxLayout(orientation='vertical', spacing=10)
+        self.vertical_layout.add_widget(self.control_layout)
 
         # Add a redraw button below the control buttons
-        self.redraw_button = Button(text="Redraw UI", on_press=self.redraw_ui, size_hint_y=None, height=0)
+        self.redraw_button = Button(text="Redraw UI", on_press=self.redraw_ui, size_hint_y=None, height=40)
         self.redraw_button.opacity = 0  # Start hidden
         self.redraw_button.disabled = True  # Start disabled
-        self.root.add_widget(self.redraw_button)
+        self.vertical_layout.add_widget(self.redraw_button)
+
+        self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1), padding_y=(0, 10))  # Set top padding to 0
+        self.vertical_layout.add_widget(self.output)
         
-        self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1))
-        self.root.add_widget(self.output)
-        
+        self.root.add_widget(self.vertical_layout)
+
         self.update_text_alignment(self.ip_input)
         self.update_text_alignment(self.port_input)
         self.update_text_alignment(self.delay_input)
@@ -221,19 +226,25 @@ class VicreoListenerApp(App):
         self.debug_toggle.background_color = (0.5, 0.5, 0.5, 1)
         self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
         self.update_redraw_button_visibility()
+        self.update_vertical_spacing()
         self.save_config()
 
     def update_redraw_button_visibility(self):
         if self.debug_mode:
             self.redraw_button.opacity = 1
-            self.redraw_button.size_hint_y = None
-            self.redraw_button.height = 40
             self.redraw_button.disabled = False
         else:
             self.redraw_button.opacity = 0
-            self.redraw_button.size_hint_y = None
-            self.redraw_button.height = 0
             self.redraw_button.disabled = True
+
+    def update_vertical_spacing(self):
+        # Adjust vertical spacing around the redraw button
+        if self.debug_mode:
+            self.vertical_layout.spacing = 10
+            self.redraw_button.height = 40
+        else:
+            self.vertical_layout.spacing = 5
+            self.redraw_button.height = 0
 
     def set_ip(self, instance):
         self.listen_ip = self.ip_input.text
@@ -377,6 +388,7 @@ class VicreoListenerApp(App):
     def post_build_init(self, dt):
         # This method is called after build to ensure UI is initialized
         self.load_config()
+        self.log_message(STARTUP_MESSAGE)  # Display startup message
 
     def load_config(self, dt=None):
         try:
@@ -399,6 +411,7 @@ class VicreoListenerApp(App):
                     self.debug_toggle.state = 'down' if self.debug_mode else 'normal'
                     self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
                     self.update_redraw_button_visibility()  # Update visibility based on loaded debug mode
+                    self.update_vertical_spacing()  # Update spacing based on loaded debug mode
                 logging.info(f"[INFO] Configuration loaded: {config}")
                 if self.debug_mode:
                     self.log_message(f"[DEBUG] Configuration loaded: {config}")
