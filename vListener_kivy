@@ -15,18 +15,23 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 import threading
 import logging
-from pathlib import Path
 import os
+from pathlib import Path
+from kivy.graphics import Color, Rectangle
 
 # Define app version
 APP_VERSION = "0.1"
+CONFIG_DIR = Path.home() / "Library/Application Support/vlistener"
+CONFIG_FILE = CONFIG_DIR / "vlistener_settings.json"
+
+# Default configuration values
+DEFAULT_IP_ADDRESS = "127.0.0.1"
+DEFAULT_PORT = 12345
+DEFAULT_DELAY_MS = 2500
+DEFAULT_DEBUG_MODE = False
 
 # Configure the logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Configuration file details
-CONFIG_DIR = Path.home() / "Library" / "Application Support" / "vlistener"
-CONFIG_FILE = CONFIG_DIR / "vlistener_settings.json"
 
 # Function to create an icon image
 def create_image():
@@ -102,20 +107,31 @@ def parse_command(command, delay_ms):
         logging.debug(f"JSON Decode Error: {str(e)}")
         return "Invalid JSON format"
 
+# Custom BoxLayout to handle background color
+class ColoredBoxLayout(BoxLayout):
+    def __init__(self, **kwargs):
+        background_color = kwargs.pop('background_color', (1, 1, 1, 1))  # Default white
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(*background_color)  # Set the background color
+            self.rect = Rectangle(size=self.size, pos=self.pos)
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.rect.pos = self.pos
+        self.rect.size = self.size
+
 class VicreoListenerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.server_socket = None
         self.active_connections = []
         self.is_running = True
-        self.debug_mode = False
-        self.delay_ms = 2000  # Default delay in milliseconds
-        self.listen_ip = '127.0.0.1'  # Default IP address
-        self.port_number = 0  # Default port number
+        self.debug_mode = DEFAULT_DEBUG_MODE
+        self.delay_ms = DEFAULT_DELAY_MS  # Default delay in milliseconds
+        self.listen_ip = DEFAULT_IP_ADDRESS  # Default IP address
+        self.port = DEFAULT_PORT  # Default port number
         self.tray_icon = None  # To keep reference to the pystray icon
-
-        # Load the configuration
-        self.load_config()
 
     def build(self):
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -123,19 +139,19 @@ class VicreoListenerApp(App):
         # Horizontal layout for port number, IP address, and corresponding buttons
         config_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=60)
         
-        self.ip_input = TextInput(hint_text="Enter IP address", text=self.listen_ip, multiline=False, size_hint_y=None, height=60)
+        self.ip_input = TextInput(text=self.listen_ip, hint_text="Enter IP address", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.ip_input)
         
         self.set_ip_button = Button(text="Set IP", on_press=self.set_ip, size_hint_y=None, height=60)
         config_layout.add_widget(self.set_ip_button)
         
-        self.port_input = TextInput(hint_text="Enter port number", text=str(self.port_number), multiline=False, size_hint_y=None, height=60)
+        self.port_input = TextInput(text=str(self.port), hint_text="Enter port number", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.port_input)
         
         self.set_port_button = Button(text="Set Port", on_press=self.set_port, size_hint_y=None, height=60)
         config_layout.add_widget(self.set_port_button)
         
-        self.delay_input = TextInput(hint_text="Enter delay (ms)", text=str(self.delay_ms), multiline=False, size_hint_y=None, height=60)
+        self.delay_input = TextInput(text=str(self.delay_ms), hint_text="Enter delay (ms)", multiline=False, size_hint_y=None, height=60)
         config_layout.add_widget(self.delay_input)
         
         self.set_delay_button = Button(text="Set Delay", on_press=self.set_delay, size_hint_y=None, height=60)
@@ -152,18 +168,23 @@ class VicreoListenerApp(App):
         self.disconnect_button = Button(text="Disconnect", on_press=self.disconnect, disabled=True, size_hint=(0.25, None), height=60)
         control_layout.add_widget(self.disconnect_button)
         
-        self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.7, 0.7, 0.7, 1))
+        self.debug_toggle = ToggleButton(text="Debugging Off", size_hint=(0.25, None), height=60, background_color=(0.5, 0.5, 0.5, 1))
         self.debug_toggle.bind(on_press=self.toggle_debug)
-        self.update_debug_button()
         control_layout.add_widget(self.debug_toggle)
         
         self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
         control_layout.add_widget(self.quit_button)
         
-        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0.2, 0.4, 0.6, 1))
+        self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0.5, 0.7, 1, 1))  # Lighter blue
         control_layout.add_widget(self.hide_window_button)
         
         self.root.add_widget(control_layout)
+
+        # Add a redraw button below the control buttons
+        self.redraw_button = Button(text="Redraw UI", on_press=self.redraw_ui, size_hint_y=None, height=0)
+        self.redraw_button.opacity = 0  # Start hidden
+        self.redraw_button.disabled = True  # Start disabled
+        self.root.add_widget(self.redraw_button)
         
         self.output = TextInput(readonly=True, size_hint=(1, 1), background_color=(0.9, 0.9, 0.9, 1))
         self.root.add_widget(self.output)
@@ -173,18 +194,17 @@ class VicreoListenerApp(App):
         self.update_text_alignment(self.delay_input)
 
         # Add bottom bar for app version
-        bottom_bar = BoxLayout(size_hint_y=None, height=30, padding=(10, 0))
-        bottom_bar.add_widget(Label(text=f"Version: {APP_VERSION}", color=(0.3, 0.3, 0.3, 1), halign='left'))
+        bottom_bar = ColoredBoxLayout(size_hint_y=None, height=30, background_color=(0.2, 0.2, 0.2, 1))  # Dark grey
+        version_label = Label(text=f"Version: {APP_VERSION}", color=(0.7, 0.7, 0.7, 1), font_size='10sp', halign='left')  # Lighter text and smaller size
+        bottom_bar.add_widget(version_label)
         self.root.add_widget(bottom_bar)
 
         Window.bind(on_request_close=self.hide_window)
-        
-        return self.root
 
-    def update_debug_button(self):
-        """Update the debug button's text and color based on the current debug mode."""
-        self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
-        self.debug_toggle.background_color = (1, 0.4, 0.4, 1) if self.debug_mode else (0.7, 0.7, 0.7, 1)
+        # Schedule configuration loading after the UI is fully set up
+        Clock.schedule_once(self.post_build_init, 0)
+
+        return self.root
 
     def update_text_alignment(self, text_input):
         text_input.halign = 'center'
@@ -197,9 +217,23 @@ class VicreoListenerApp(App):
 
     def toggle_debug(self, instance):
         self.debug_mode = not self.debug_mode
-        self.update_debug_button()
+        self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
+        self.debug_toggle.background_color = (0.5, 0.5, 0.5, 1)
         self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
+        self.update_redraw_button_visibility()
         self.save_config()
+
+    def update_redraw_button_visibility(self):
+        if self.debug_mode:
+            self.redraw_button.opacity = 1
+            self.redraw_button.size_hint_y = None
+            self.redraw_button.height = 40
+            self.redraw_button.disabled = False
+        else:
+            self.redraw_button.opacity = 0
+            self.redraw_button.size_hint_y = None
+            self.redraw_button.height = 0
+            self.redraw_button.disabled = True
 
     def set_ip(self, instance):
         self.listen_ip = self.ip_input.text
@@ -209,18 +243,17 @@ class VicreoListenerApp(App):
         self.save_config()
 
     def set_port(self, instance):
-        port = self.port_input.text
-        if port.isdigit() and 0 <= int(port) <= 65535:
-            self.port_number = int(port)
+        if self.port_input.text.isdigit() and 0 <= int(self.port_input.text) <= 65535:
             self.start_server_button.disabled = False
-            self.log_message(f"Port set to {port}")
+            self.port = int(self.port_input.text)
+            self.log_message(f"Port set to {self.port}")
             if self.debug_mode:
-                self.log_message(f"[DEBUG] Port set to {port}")
+                self.log_message(f"[DEBUG] Port set to {self.port}")
+            self.save_config()
         else:
             self.log_message("Invalid port number")
             if self.debug_mode:
                 self.log_message("[DEBUG] Invalid port number entered")
-        self.save_config()
 
     def set_delay(self, instance):
         if self.delay_input.text.isdigit() and int(self.delay_input.text) >= 0:
@@ -228,11 +261,11 @@ class VicreoListenerApp(App):
             self.log_message(f"Delay set to {self.delay_ms} milliseconds")
             if self.debug_mode:
                 self.log_message(f"[DEBUG] Delay set to {self.delay_ms} milliseconds")
+            self.save_config()
         else:
             self.log_message("Invalid delay value")
             if self.debug_mode:
                 self.log_message("[DEBUG] Invalid delay value entered")
-        self.save_config()
 
     def start_server(self, instance):
         self.start_server_button.disabled = True
@@ -244,13 +277,12 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Server start button pressed. Running on thread: " + threading.current_thread().name)
 
     def run_server(self):
-        port = int(self.port_input.text)
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.listen_ip, port))
+        self.server_socket.bind((self.listen_ip, self.port))
         self.server_socket.listen(5)
-        self.log_message(f"Server started on {self.listen_ip}:{port}. Waiting for connections...")
+        self.log_message(f"Server started on {self.listen_ip}:{self.port}. Waiting for connections...")
         if self.debug_mode:
-            self.log_message(f"[DEBUG] Server listening on {self.listen_ip}:{port}. Running on thread: " + threading.current_thread().name)
+            self.log_message(f"[DEBUG] Server listening on {self.listen_ip}:{self.port}. Running on thread: " + threading.current_thread().name)
         while self.is_running:
             try:
                 client_socket, addr = self.server_socket.accept()
@@ -331,41 +363,71 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Window hidden")
         return True  # Returning True prevents the window from being closed
 
-    def load_config(self):
+    def redraw_ui(self, instance):
+        logging.info("[INFO] Redrawing UI")
+        if self.debug_mode:
+            self.log_message("[DEBUG] Redrawing UI")
+        # Refresh the UI by updating existing widgets
+        self.update_text_alignment(self.ip_input)
+        self.update_text_alignment(self.port_input)
+        self.update_text_alignment(self.delay_input)
+        if self.debug_mode:
+            self.log_message("[DEBUG] UI redrawn")
+
+    def post_build_init(self, dt):
+        # This method is called after build to ensure UI is initialized
+        self.load_config()
+
+    def load_config(self, dt=None):
         try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             if CONFIG_FILE.exists():
-                with open(CONFIG_FILE, 'r') as file:
-                    config = json.load(file)
-                    self.listen_ip = config.get('listen_ip', self.listen_ip)
-                    self.port_number = config.get('port', self.port_number)
-                    self.delay_ms = config.get('delay_ms', self.delay_ms)
-                    self.debug_mode = config.get('debug_mode', self.debug_mode)
-                    logging.info(f"Configuration loaded: {config}")
+                with CONFIG_FILE.open("r") as f:
+                    config = json.load(f)
+                self.listen_ip = config.get('ip_address', DEFAULT_IP_ADDRESS)
+                self.port = config.get('port', DEFAULT_PORT)
+                self.delay_ms = config.get('delay', DEFAULT_DELAY_MS)
+                self.debug_mode = config.get('debug', DEFAULT_DEBUG_MODE)
+                # Update UI elements with loaded config
+                if hasattr(self, 'ip_input'):
+                    self.ip_input.text = self.listen_ip
+                if hasattr(self, 'port_input'):
+                    self.port_input.text = str(self.port)
+                if hasattr(self, 'delay_input'):
+                    self.delay_input.text = str(self.delay_ms)
+                if hasattr(self, 'debug_toggle'):
+                    self.debug_toggle.state = 'down' if self.debug_mode else 'normal'
+                    self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
+                    self.update_redraw_button_visibility()  # Update visibility based on loaded debug mode
+                logging.info(f"[INFO] Configuration loaded: {config}")
+                if self.debug_mode:
+                    self.log_message(f"[DEBUG] Configuration loaded: {config}")
+            else:
+                self.log_message("[INFO] No configuration file found, using defaults.")
+                if self.debug_mode:
+                    self.log_message("[DEBUG] No configuration file found, using defaults.")
         except Exception as e:
-            logging.error(f"Failed to load configuration: {e}")
+            logging.error(f"[ERROR] Failed to load configuration: {str(e)}")
             if self.debug_mode:
-                self.log_message(f"[DEBUG] Failed to load configuration: {e}")
+                self.log_message(f"[DEBUG] Failed to load configuration: {str(e)}")
 
     def save_config(self):
         try:
-            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             config = {
-                'listen_ip': self.listen_ip,
-                'port': self.port_number,
-                'delay_ms': self.delay_ms,
-                'debug_mode': self.debug_mode,
+                'ip_address': self.listen_ip,
+                'port': self.port,
+                'delay': self.delay_ms,
+                'debug': self.debug_mode
             }
-            temp_file = CONFIG_FILE.with_suffix('.tmp')
-            with open(temp_file, 'w') as file:
-                json.dump(config, file)
-            os.replace(temp_file, CONFIG_FILE)
-            logging.info("Configuration saved successfully.")
+            with CONFIG_FILE.open("w") as f:
+                json.dump(config, f, indent=4)
+            logging.info(f"[INFO] Configuration saved: {config}")
             if self.debug_mode:
-                self.log_message("[DEBUG] Configuration saved successfully.")
+                self.log_message(f"[DEBUG] Configuration saved: {config}")
         except Exception as e:
-            logging.error(f"Failed to save configuration: {e}")
+            logging.error(f"[ERROR] Failed to save configuration: {str(e)}")
             if self.debug_mode:
-                self.log_message(f"[DEBUG] Failed to save configuration: {e}")
+                self.log_message(f"[DEBUG] Failed to save configuration: {str(e)}")
 
 def quit_app(icon, item):
     icon.stop()
