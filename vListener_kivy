@@ -15,6 +15,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 import threading
 import logging
+import re  # For IP address validation
 
 # Define app version
 APP_VERSION = "0.1"
@@ -95,6 +96,18 @@ def parse_command(command, delay_ms):
     except json.JSONDecodeError as e:
         logging.debug(f"JSON Decode Error: {str(e)}")
         return "Invalid JSON format"
+
+# Function to validate IP address
+def is_valid_ip(ip):
+    pattern = re.compile(r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
+    if pattern.match(ip):
+        parts = ip.split(".")
+        valid = all(0 <= int(part) <= 255 for part in parts)
+        if not valid:
+            logging.debug(f"IP address {ip} is not valid: segments out of range")
+        return valid
+    logging.debug(f"IP address {ip} is not valid: does not match pattern")
+    return False
 
 class VicreoListenerApp(App):
     def __init__(self, **kwargs):
@@ -186,10 +199,16 @@ class VicreoListenerApp(App):
         self.log_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
 
     def set_ip(self, instance):
-        self.listen_ip = self.ip_input.text
-        self.log_message(f"IP address set to {self.listen_ip}")
-        if self.debug_mode:
-            self.log_message(f"[DEBUG] IP address set to {self.listen_ip}")
+        ip_address = self.ip_input.text
+        if is_valid_ip(ip_address):
+            self.listen_ip = ip_address
+            self.log_message(f"IP address set to {self.listen_ip}")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] IP address set to {self.listen_ip}")
+        else:
+            self.log_message("Invalid IP address entered")
+            if self.debug_mode:
+                self.log_message(f"[DEBUG] Invalid IP address: {ip_address}")
 
     def set_port(self, instance):
         if self.port_input.text.isdigit() and 0 <= int(self.port_input.text) <= 65535:
@@ -329,4 +348,3 @@ def run_tray():
 if __name__ == "__main__":
     run_tray()  # Start pystray menu
     VicreoListenerApp().run()  # Run the Kivy application on the main thread
-
