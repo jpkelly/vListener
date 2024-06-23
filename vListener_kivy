@@ -144,7 +144,7 @@ class VicreoListenerApp(App):
         
         self.quit_button = Button(text="Quit", on_press=self.quit_app, size_hint=(0.25, None), height=60)
         control_layout.add_widget(self.quit_button)
-
+        
         self.hide_window_button = Button(text="HIDE (use menu to show)", on_press=self.hide_window, size_hint=(0.51, None), height=60, background_color=(0.2, 0.4, 0.6, 1))
         control_layout.add_widget(self.hide_window_button)
         
