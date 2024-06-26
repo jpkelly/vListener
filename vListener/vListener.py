@@ -20,27 +20,20 @@ from pathlib import Path
 from kivy.graphics import Color, Rectangle
 
 # Define app version
-APP_VERSION = "0.1"
+APP_VERSION = "0.2"
 CONFIG_DIR = Path.home() / "Library/Application Support/vlistener"
 CONFIG_FILE = CONFIG_DIR / "vlistener_settings.json"
-LOG_FILE = CONFIG_DIR / "vlistener.log"
 
 # Default configuration values
 DEFAULT_IP_ADDRESS = "127.0.0.1"
 DEFAULT_PORT = 12345
 DEFAULT_DELAY_MS = 2500
 DEFAULT_DEBUG_MODE = False
-STARTUP_MESSAGE = "\n***** vListener started ***** \nYou can close this window and it will run in background.\nUse menu extra (ear icon) to show window again or to quit vListener.\n*****************************"
-
-# Ensure the config directory exists
-CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+STARTUP_MESSAGE = "\n***** vListener started ***** \nYou can close this window and it will run in background.\nUse menu extra (ear icon) to show this window again or to quit vListener.\n****************************"
 
 # Configure the logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-file_handler = logging.FileHandler(LOG_FILE)
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logging.getLogger().addHandler(file_handler)
+log_file_path = os.path.join(CONFIG_DIR, "vlistener.log")
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.FileHandler(log_file_path), logging.StreamHandler()])
 
 # Function to create an icon image
 def create_image():
@@ -143,6 +136,8 @@ class VicreoListenerApp(App):
         self.tray_icon = None  # To keep reference to the pystray icon
 
     def build(self):
+        if self.debug_mode:
+            logging.debug("Building the Kivy application UI")
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
         # Horizontal layout for port number, IP address, and corresponding buttons
@@ -220,15 +215,21 @@ class VicreoListenerApp(App):
         return self.root
 
     def update_text_alignment(self, text_input):
+        if self.debug_mode:
+            logging.debug(f"Updating text alignment for {text_input}")
         text_input.halign = 'center'
         text_input.bind(size=self._align_text)
         text_input.bind(focus=self._align_text)
 
     def _align_text(self, instance, value):
+        if self.debug_mode:
+            logging.debug(f"Aligning text for {instance}")
         instance.text_size = instance.size
         instance.padding_y = (instance.height - instance.line_height) / 2
 
     def toggle_debug(self, instance):
+        if self.debug_mode:
+            logging.debug("Toggling debug mode")
         self.debug_mode = not self.debug_mode
         self.debug_toggle.text = "Debugging On" if self.debug_mode else "Debugging Off"
         self.debug_toggle.background_color = (0.5, 0.5, 0.5, 1)
@@ -239,6 +240,8 @@ class VicreoListenerApp(App):
 
     def update_redraw_button_visibility(self):
         if self.debug_mode:
+            logging.debug("Updating redraw button visibility")
+        if self.debug_mode:
             self.redraw_button.opacity = 1
             self.redraw_button.disabled = False
         else:
@@ -246,6 +249,8 @@ class VicreoListenerApp(App):
             self.redraw_button.disabled = True
 
     def update_vertical_spacing(self):
+        if self.debug_mode:
+            logging.debug("Updating vertical spacing")
         # Adjust vertical spacing around the redraw button
         if self.debug_mode:
             self.vertical_layout.spacing = 10
@@ -255,6 +260,8 @@ class VicreoListenerApp(App):
             self.redraw_button.height = 0
 
     def set_ip(self, instance):
+        if self.debug_mode:
+            logging.debug("Setting IP address")
         self.listen_ip = self.ip_input.text
         self.log_message(f"IP address set to {self.listen_ip}")
         if self.debug_mode:
@@ -262,6 +269,8 @@ class VicreoListenerApp(App):
         self.save_config()
 
     def set_port(self, instance):
+        if self.debug_mode:
+            logging.debug("Setting port number")
         if self.port_input.text.isdigit() and 0 <= int(self.port_input.text) <= 65535:
             self.start_server_button.disabled = False
             self.port = int(self.port_input.text)
@@ -275,6 +284,8 @@ class VicreoListenerApp(App):
                 self.log_message("[DEBUG] Invalid port number entered")
 
     def set_delay(self, instance):
+        if self.debug_mode:
+            logging.debug("Setting delay value")
         if self.delay_input.text.isdigit() and int(self.delay_input.text) >= 0:
             self.delay_ms = int(self.delay_input.text)
             self.log_message(f"Delay set to {self.delay_ms} milliseconds")
@@ -287,6 +298,8 @@ class VicreoListenerApp(App):
                 self.log_message("[DEBUG] Invalid delay value entered")
 
     def start_server(self, instance):
+        if self.debug_mode:
+            logging.debug("Starting server")
         self.start_server_button.disabled = True
         self.disconnect_button.disabled = False
         self.is_running = True
@@ -296,6 +309,8 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Server start button pressed. Running on thread: " + threading.current_thread().name)
 
     def run_server(self):
+        if self.debug_mode:
+            logging.debug("Running server thread")
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.listen_ip, self.port))
         self.server_socket.listen(5)
@@ -318,6 +333,8 @@ class VicreoListenerApp(App):
                 break
 
     def handle_client(self, client_socket):
+        if self.debug_mode:
+            logging.debug("Handling client connection")
         try:
             while self.is_running:
                 try:
@@ -342,6 +359,8 @@ class VicreoListenerApp(App):
                 self.log_message("[DEBUG] Client socket closed and removed from active connections")
 
     def disconnect(self, instance):
+        if self.debug_mode:
+            logging.debug("Disconnecting server")
         self.is_running = False
         for client_socket in self.active_connections:
             client_socket.close()
@@ -355,6 +374,8 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] Server disconnect button pressed and server socket closed")
 
     def quit_app(self, instance):
+        if self.debug_mode:
+            logging.debug("Quitting application")
         self.disconnect(instance)
         self.stop()
         logging.info("Application has been closed cleanly.")
@@ -371,12 +392,16 @@ class VicreoListenerApp(App):
         Clock.schedule_once(append_text)
 
     def show_window(self):
+        if self.debug_mode:
+            logging.debug("Showing window")
         Window.show()
         Window.raise_window()
         if self.debug_mode:
             self.log_message("[DEBUG] Window shown")
 
     def hide_window(self, *args):
+        if self.debug_mode:
+            logging.debug("Hiding window")
         Window.hide()
         if self.debug_mode:
             self.log_message("[DEBUG] Window hidden")
@@ -394,11 +419,15 @@ class VicreoListenerApp(App):
             self.log_message("[DEBUG] UI redrawn")
 
     def post_build_init(self, dt):
+        if self.debug_mode:
+            logging.debug("Post build initialization")
         # This method is called after build to ensure UI is initialized
         self.load_config()
         self.log_message(STARTUP_MESSAGE)  # Display startup message
 
     def load_config(self, dt=None):
+        if self.debug_mode:
+            logging.debug("Loading configuration")
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             if CONFIG_FILE.exists():
@@ -433,6 +462,8 @@ class VicreoListenerApp(App):
                 self.log_message(f"[DEBUG] Failed to load configuration: {str(e)}")
 
     def save_config(self):
+        if self.debug_mode:
+            logging.debug("Saving configuration")
         try:
             config = {
                 'ip_address': self.listen_ip,
@@ -451,17 +482,19 @@ class VicreoListenerApp(App):
                 self.log_message(f"[DEBUG] Failed to save configuration: {str(e)}")
 
 def quit_app(icon, item):
-    icon.stop()
+    logging.info("Quitting application from tray icon")
     app = App.get_running_app()
     if app:
         app.quit_app(None)
 
 def show_window(icon, item):
+    logging.info("Showing window from tray icon")
     app = App.get_running_app()
     if app:
         app.show_window()
 
 def run_tray():
+    logging.info("Starting tray icon")
     menu = (item('Show Window', show_window), item('Quit', quit_app))
     icon = pystray.Icon("VicreoListener", create_image(), "Vicreo Listener", menu)
     icon.run_detached()
