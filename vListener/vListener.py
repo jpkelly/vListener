@@ -23,16 +23,24 @@ from kivy.graphics import Color, Rectangle
 APP_VERSION = "0.1"
 CONFIG_DIR = Path.home() / "Library/Application Support/vlistener"
 CONFIG_FILE = CONFIG_DIR / "vlistener_settings.json"
+LOG_FILE = CONFIG_DIR / "vlistener.log"
 
 # Default configuration values
 DEFAULT_IP_ADDRESS = "127.0.0.1"
 DEFAULT_PORT = 12345
 DEFAULT_DELAY_MS = 2500
 DEFAULT_DEBUG_MODE = False
-STARTUP_MESSAGE = "vListener started. You can close this window and it will run in background. Use menu extra to show window again or quit vListener."
+STARTUP_MESSAGE = "\n***** vListener started ***** \nYou can close this window and it will run in background.\nUse menu extra (ear icon) to show window again or to quit vListener.\n*****************************"
+
+# Ensure the config directory exists
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Configure the logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+file_handler = logging.FileHandler(LOG_FILE)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(file_handler)
 
 # Function to create an icon image
 def create_image():
